@@ -1,25 +1,38 @@
 import cv2
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk
 import numpy as np
 from skimage.morphology import skeletonize
 
 # --------------------- Biometric Processing Functions ---------------------
 def process_fingerprint(image_path):
+    # Read and preprocess image
     img = cv2.imread(image_path, 0)
     
+    # Enhance contrast and reduce noise
     clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8,8))
     enhanced = clahe.apply(img)
     enhanced = cv2.medianBlur(enhanced, 5)
     enhanced = cv2.GaussianBlur(enhanced, (5,5), 0)
     
+    # Binarization
     binary = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                 cv2.THRESH_BINARY_INV, 11, 2)
+                                   cv2.THRESH_BINARY_INV, 11, 2)
+    
+    # Find contours to create a mask for the fingerprint area
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    mask = np.zeros_like(binary)
+    
+    # Assuming the largest contour is the fingerprint
+    if contours:
+        largest_contour = max(contours, key=cv2.contourArea)
+        cv2.drawContours(mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
 
+    # Ridge thinning
     skeleton = skeletonize(binary // 255)
     skeleton = (skeleton * 255).astype('uint8')
-    
+
+    # Initialize result image and feature dictionary
     result = cv2.cvtColor(skeleton, cv2.COLOR_GRAY2BGR)
     features = {
         'ridge_endings': {'count': 0, 'color': (0, 0, 255), 'importance': 35},    # Red
@@ -28,30 +41,36 @@ def process_fingerprint(image_path):
         'ridge_patterns': {'count': 0, 'color': (255, 255, 0), 'importance': 10}  # Yellow
     }
     
-    border = 20
-    for i in range(border, skeleton.shape[0]-border):
-        for j in range(border, skeleton.shape[1]-border):
-            if skeleton[i,j] == 255:
+    # Analyze only the fingerprint area
+    for i in range(skeleton.shape[0]):
+        for j in range(skeleton.shape[1]):
+            if skeleton[i, j] == 255 and mask[i, j] == 255:  # Check if within the mask
                 neighbors = skeleton[i-1:i+2, j-1:j+2]
                 cn = np.sum(neighbors) // 255
                 
-                if cn == 2: 
+                if cn == 2:  # Ridge ending
                     features['ridge_endings']['count'] += 1
                     cv2.circle(result, (j, i), 3, features['ridge_endings']['color'], -1)
-                elif cn == 3: 
+                elif cn == 3:  # Bifurcation
                     features['bifurcations']['count'] += 1
                     cv2.circle(result, (j, i), 3, features['bifurcations']['color'], -1)
-    
+
+    # Calculate ridge patterns and draw them
     edges = cv2.Canny(enhanced, 50, 150)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     features['ridge_patterns']['count'] = len(contours)
-    
+
+    # Draw ridge patterns on the result image
+    for contour in contours:
+        cv2.drawContours(result, [contour], -1, features['ridge_patterns']['color'], 1)
+
+    # Draw analysis results with background for better readability
     y_offset = 30
     def put_text_with_background(text, y_pos, color=(255, 255, 255)):
         (text_w, text_h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
         cv2.rectangle(result, (8, y_pos-text_h-5), (text_w+12, y_pos+5), (0, 0, 0), -1)
         cv2.putText(result, text, (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    
+
     # Feature counts
     put_text_with_background("Feature Analysis:", y_offset)
     for feature, data in features.items():
@@ -61,17 +80,17 @@ def process_fingerprint(image_path):
             y_offset, 
             data['color']
         )
-    
 
+    # Quality metrics
     y_offset += 35
-    ridge_density = np.sum(skeleton == 255) / (skeleton.shape[0] * skeleton.shape[1])
+    ridge_density = np.sum(skeleton == 255) / (np.sum(mask == 255) + 1e-5)  # Avoid division by zero
     quality_score = min(100, int((features['ridge_endings']['count'] + 
-                                features['bifurcations']['count']) * ridge_density * 100))
-    
+                                   features['bifurcations']['count']) * ridge_density * 100))
+
     put_text_with_background(f"Ridge Density: {ridge_density:.3f}", y_offset)
     y_offset += 25
     put_text_with_background(f"Quality Score: {quality_score}%", y_offset)
-    
+
     return result
 
 def detect_face(image_path):
