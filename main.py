@@ -376,6 +376,7 @@ class BioMetricApp:
         try:
             self.status_var.set(f"Processing {mode} image...")
             
+            # Process image based on mode
             if mode == "fingerprint":
                 result = process_fingerprint(file_path)
             elif mode == "face":
@@ -383,30 +384,27 @@ class BioMetricApp:
             elif mode == "iris":
                 result = detect_iris(file_path)
             
-            # Get image dimensions
+            # Get original image dimensions
             height, width = result.shape[:2]
             
-            # Set maximum dimensions
-            max_width = 800
-            max_height = 600
+            # Calculate screen dimensions (accounting for taskbar and window borders)
+            screen_width = self.root.winfo_screenwidth() - 100
+            screen_height = self.root.winfo_screenheight() - 100
             
-            # Calculate scaling factor
-            scale_width = max_width / width if width > max_width else 1.0
-            scale_height = max_height / height if height > max_height else 1.0
-            scale = min(scale_width, scale_height)
+            # Calculate scaling only if image is larger than screen
+            if width > screen_width or height > screen_height:
+                scale_width = screen_width / width
+                scale_height = screen_height / height
+                scale = min(scale_width, scale_height)
+                
+                width = int(width * scale)
+                height = int(height * scale)
+                result = cv2.resize(result, (width, height))
             
-            # Resize if necessary
-            if scale < 1.0:
-                new_width = int(width * scale)
-                new_height = int(height * scale)
-                result = cv2.resize(result, (new_width, new_height))
-            
-            # Create window with specific size
+            # Create window and set properties
             window_name = f"{mode.capitalize()} Analysis Results"
             cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(window_name, 
-                           min(width, max_width), 
-                           min(height, max_height))
+            cv2.resizeWindow(window_name, width, height)
             
             # Display results
             cv2.imshow(window_name, result)
