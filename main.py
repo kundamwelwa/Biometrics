@@ -1,6 +1,6 @@
 import cv2
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 import numpy as np
 from skimage.morphology import skeletonize
@@ -255,35 +255,127 @@ def detect_iris(image_path):
 class BioMetricApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Biometric Feature Extractor")
+        self.root.title("Biometric Feature Analysis System")
         
-        # Create mode selection buttons
-        tk.Button(
-            root, text="Fingerprint Analysis", command=lambda: self.upload_image("fingerprint"),
-            width=25, height=3
-        ).pack(pady=10)
+        # Set window size and position
+        window_width = 1000
+        window_height = 600
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        center_x = int(screen_width/2 - window_width/2)
+        center_y = int(screen_height/2 - window_height/2)
+        self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
         
-        tk.Button(
-            root, text="Face Detection", command=lambda: self.upload_image("face"),
-            width=25, height=3
-        ).pack(pady=10)
+        # Set theme and style
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
         
-        tk.Button(
-            root, text="Iris Detection", command=lambda: self.upload_image("iris"),
-            width=25, height=3
-        ).pack(pady=10)
+        # Configure colors
+        self.style.configure('Main.TFrame', background='#f0f0f0')
+        self.style.configure('Header.TLabel', 
+                           background='#2c3e50', 
+                           foreground='white', 
+                           font=('Helvetica', 24, 'bold'),
+                           padding=10)
+        self.style.configure('SubHeader.TLabel',
+                           background='#f0f0f0',
+                           font=('Helvetica', 12),
+                           padding=5)
+        self.style.configure('Action.TButton',
+                           font=('Helvetica', 11),
+                           padding=10)
+        
+        # Create main container
+        self.main_frame = ttk.Frame(root, style='Main.TFrame')
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Header
+        header_frame = ttk.Frame(self.main_frame)
+        header_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        ttk.Label(header_frame, 
+                 text="Biometric Feature Analysis System",
+                 style='Header.TLabel').pack(fill=tk.X)
+        
+        ttk.Label(header_frame,
+                 text="Select a biometric feature to analyze",
+                 style='SubHeader.TLabel').pack(fill=tk.X)
+        
+        # Create feature selection frame
+        feature_frame = ttk.Frame(self.main_frame)
+        feature_frame.pack(fill=tk.BOTH, expand=True, pady=20)
+        
+        # Configure grid
+        feature_frame.columnconfigure(0, weight=1)
+        feature_frame.columnconfigure(1, weight=1)
+        feature_frame.columnconfigure(2, weight=1)
+        
+        # Feature buttons with icons (you'll need to add your own icons)
+        self.create_feature_button(feature_frame, 
+                                 "Fingerprint Analysis",
+                                 "Analyze fingerprint patterns and minutiae",
+                                 lambda: self.upload_image("fingerprint"),
+                                 0)
+        
+        self.create_feature_button(feature_frame,
+                                 "Facial Recognition",
+                                 "Detect and analyze facial features",
+                                 lambda: self.upload_image("face"),
+                                 1)
+        
+        self.create_feature_button(feature_frame,
+                                 "Iris Detection",
+                                 "Analyze iris patterns and features",
+                                 lambda: self.upload_image("iris"),
+                                 2)
+        
+        # Status bar
+        self.status_var = tk.StringVar()
+        self.status_var.set("Ready")
+        status_bar = ttk.Label(self.main_frame, 
+                             textvariable=self.status_var,
+                             relief=tk.SUNKEN,
+                             padding=5)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM, pady=(20, 0))
+
+    def create_feature_button(self, parent, title, description, command, column):
+        frame = ttk.Frame(parent, padding=10)
+        frame.grid(row=0, column=column, sticky='nsew', padx=10)
+        
+        # Button style for hover effect
+        self.style.configure(f'{title}.TButton',
+                           background='#3498db',
+                           font=('Helvetica', 12, 'bold'))
+        
+        # Main button
+        btn = ttk.Button(frame, 
+                        text=title,
+                        command=command,
+                        style=f'{title}.TButton',
+                        padding=20)
+        btn.pack(fill=tk.X, pady=(0, 10))
+        
+        # Description
+        ttk.Label(frame,
+                 text=description,
+                 wraplength=200,
+                 justify=tk.CENTER,
+                 style='SubHeader.TLabel').pack()
 
     def upload_image(self, mode):
+        self.status_var.set(f"Selecting image for {mode} analysis...")
         file_path = filedialog.askopenfilename(
             title=f"Select {mode.capitalize()} Image",
             filetypes=[("Image files", "*.jpg *.jpeg *.png")]
         )
         
         if not file_path:
+            self.status_var.set("Ready")
             return
         
         try:
-            # Process image based on mode
+            self.status_var.set(f"Processing {mode} image...")
+            
             if mode == "fingerprint":
                 result = process_fingerprint(file_path)
             elif mode == "face":
@@ -291,17 +383,43 @@ class BioMetricApp:
             elif mode == "iris":
                 result = detect_iris(file_path)
             
-            # Simple display with fixed size
-            cv2.namedWindow(f"{mode.capitalize()} Results", cv2.WINDOW_AUTOSIZE)
-            cv2.imshow(f"{mode.capitalize()} Results", result)
+            # Get image dimensions
+            height, width = result.shape[:2]
+            
+            # Set maximum dimensions
+            max_width = 800
+            max_height = 600
+            
+            # Calculate scaling factor
+            scale_width = max_width / width if width > max_width else 1.0
+            scale_height = max_height / height if height > max_height else 1.0
+            scale = min(scale_width, scale_height)
+            
+            # Resize if necessary
+            if scale < 1.0:
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                result = cv2.resize(result, (new_width, new_height))
+            
+            # Create window with specific size
+            window_name = f"{mode.capitalize()} Analysis Results"
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(window_name, 
+                           min(width, max_width), 
+                           min(height, max_height))
+            
+            # Display results
+            cv2.imshow(window_name, result)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
             
+            self.status_var.set("Analysis complete")
+            
         except Exception as e:
+            self.status_var.set("Error during processing")
             messagebox.showerror("Error", f"Processing failed: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = BioMetricApp(root)
-    root.geometry("300x300")
     root.mainloop()
